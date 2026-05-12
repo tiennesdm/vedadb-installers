@@ -1,0 +1,82 @@
+#!/bin/bash
+# =============================================================================
+# VedaDB Server - Debian/Ubuntu Pre-Removal Script
+# =============================================================================
+# Description:
+#   Runs before the package files are removed. Stops the vedadb systemd
+#   service and disables it to prevent orphaned processes.
+#
+# Called by:
+#   dpkg during package removal with 'remove' or 'upgrade' argument.
+#
+# Arguments:
+#   $1 = 'remove' | 'upgrade' | 'deconfigure'
+# =============================================================================
+
+set -e
+
+# --- Configuration ---
+SERVICE_NAME="vedadb.service"
+
+# --- Colors ---
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+log_info()  { echo -e "${BLUE}[INFO]${NC} $1"; }
+log_warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
+
+# --- Main logic ---
+case "$1" in
+    remove|deconfigure)
+        log_info "Preparing to remove VedaDB Server..."
+
+        # Stop the service if it's running
+        if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+            log_info "Stopping $SERVICE_NAME..."
+            systemctl stop "$SERVICE_NAME" || true
+        else
+            log_warn "Service $SERVICE_NAME is not running."
+        fi
+
+        # Disable the service so it doesn't try to start on boot
+        if systemctl is-enabled --quiet "$SERVICE_NAME" 2>/dev/null; then
+            log_info "Disabling $SERVICE_NAME..."
+            systemctl disable "$SERVICE_NAME" || true
+        fi
+
+        # Also stop the timer if it exists
+        if systemctl list-unit-files --type=timer | grep -q "vedadb"; then
+            systemctl stop 'vedadb*.timer' 2>/dev/null || true
+            systemctl disable 'vedadb*.timer' 2>/dev/null || true
+        fi
+        ;;
+
+    upgrade)
+        # On upgrade, just stop the service (don't disable)
+        # The postinst of the new version will restart it
+        log_info "Upgrading VedaDB Server..."
+
+        if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+            log_info "Stopping $SERVICE_NAME for upgrade..."
+            systemctl stop "$SERVICE_NAME" || true
+        fi
+
+        # Backup existing config
+        if [ -f /etc/vedadb/config.yaml ]; then
+            BACKUP_FILE="/etc/vedadb/config.yaml.bak.$(date +%s)"
+            cp /etc/vedadb/config.yaml "$BACKUP_FILE"
+            log_info "Config backed up to $BACKUP_FILE"
+        fi
+        ;;
+
+    *)
+        echo "prerm: unknown argument: $1" >&2
+        exit 1
+        ;;
+esac
+
+# --- Debhelper integration ---
+#DEBHELPER#
+
+exit 0

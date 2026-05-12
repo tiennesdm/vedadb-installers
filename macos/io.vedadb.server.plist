@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  =============================================================================
+  VedaDB Server - macOS LaunchAgent Plist
+  =============================================================================
+  Description:
+    LaunchAgent configuration for VedaDB Server on macOS 12+.
+    Auto-starts at user login, restarts on crash, manages log output.
+
+  Install Location:
+    ~/Library/LaunchAgents/io.vedadb.server.plist
+
+  Management:
+    launchctl load ~/Library/LaunchAgents/io.vedadb.server.plist
+    launchctl start io.vedadb.server
+    launchctl stop io.vedadb.server
+    launchctl unload ~/Library/LaunchAgents/io.vedadb.server.plist
+  =============================================================================
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Unique service identifier -->
+    <key>Label</key>
+    <string>io.vedadb.server</string>
+
+    <!-- Program to execute with arguments -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/vedadb/bin/vedadb-server</string>
+        <string>--config</string>
+        <string>/opt/vedadb/etc/config.yaml</string>
+    </array>
+
+    <!-- Auto-start when the agent is loaded (at login) -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- KeepAlive configuration: restart on crash, not on clean exit -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+        <key>OtherJobEnabled</key>
+        <dict>
+            <key>io.vedadb.server</key>
+            <true/>
+        </dict>
+    </dict>
+
+    <!-- Log file for stdout -->
+    <key>StandardOutPath</key>
+    <string>/usr/local/var/vedadb/logs/vedadb-server.log</string>
+
+    <!-- Log file for stderr -->
+    <key>StandardErrorPath</key>
+    <string>/usr/local/var/vedadb/logs/vedadb-server.error.log</string>
+
+    <!-- Working directory for the service -->
+    <key>WorkingDirectory</key>
+    <string>/usr/local/var/vedadb</string>
+
+    <!-- PATH environment variable for the service -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/vedadb/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <!-- Throttle startup to prevent restart loops -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <!-- Maximum time to wait for graceful shutdown -->
+    <key>ExitTimeOut</key>
+    <integer>30</integer>
+
+    <!-- Enable low-priority background scheduling -->
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <!-- Limit resources to prevent system impact -->
+    <key>HardResourceLimits</key>
+    <dict>
+        <key>NumberOfFiles</key>
+        <integer>65536</integer>
+    </dict>
+    <key>SoftResourceLimits</key>
+    <dict>
+        <key>NumberOfFiles</key>
+        <integer>65536</integer>
+    </dict>
+</dict>
+</plist>

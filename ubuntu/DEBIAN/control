@@ -1,0 +1,26 @@
+Package: vedadb-server
+Priority: optional
+Section: database
+Maintainer: VedaDB Team <team@vedadb.io>
+Architecture: amd64
+Version: 1.0.0-1
+Depends: adduser, libc6 (>= 2.31), systemd
+Recommends: logrotate
+Suggests: vedadb-workbench
+Conflicts: vedadb (<< 1.0.0)
+Replaces: vedadb (<< 1.0.0)
+Homepage: https://vedadb.io
+Description: VedaDB - Multi-model database server
+ VedaDB is a high-performance multi-model database supporting
+ document, key-value, graph, and vector data models.
+ .
+ This package contains the VedaDB server, CLI client,
+ benchmark tool, backup utility, and administration tools.
+ .
+ Features:
+  - Multi-model: document, key-value, graph, vector, time-series
+  - High-performance storage engine with query caching
+  - Built-in authentication and access control
+  - Prometheus-compatible metrics endpoint
+  - RESTful HTTP API
+  - Configurable via YAML configuration file

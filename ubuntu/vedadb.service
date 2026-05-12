@@ -1,0 +1,100 @@
+# =============================================================================
+# VedaDB Server - systemd Service Unit
+# =============================================================================
+# Description:
+#   systemd service file for VedaDB Server on Ubuntu/Debian systems.
+#   Runs as dedicated vedadb user with security hardening.
+#
+# Install:
+#   sudo cp vedadb.service /lib/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable vedadb
+#   sudo systemctl start vedadb
+#
+# Location: /lib/systemd/system/vedadb.service
+# =============================================================================
+
+[Unit]
+Description=VedaDB Server - Multi-model database
+Documentation=https://docs.vedadb.io
+After=network-online.target
+Wants=network-online.target
+
+# If the service fails to start, don't keep trying indefinitely
+StartLimitIntervalSec=60s
+StartLimitBurst=3
+
+[Service]
+# Service type: notify - service calls sd_notify() when ready
+Type=notify
+
+# Run as dedicated service user
+User=vedadb
+Group=vedadb
+
+# Main executable and config
+ExecStart=/opt/vedadb/bin/vedadb-server --config /etc/vedadb/config.yaml
+
+# Graceful reload
+ExecReload=/bin/kill -HUP $MAINPID
+
+# Restart policy: restart on failure, not on clean exit
+Restart=on-failure
+RestartSec=10
+
+# Graceful shutdown timeout
+TimeoutStopSec=30
+
+# --- Security Hardening ---
+# Prevent privilege escalation
+NoNewPrivileges=true
+
+# Protect system directories (read-only view of /usr, /boot, /etc)
+ProtectSystem=strict
+
+# Protect home directories (inaccessible)
+ProtectHome=true
+
+# Writable paths for data and logs
+ReadWritePaths=/var/lib/vedadb /var/log/vedadb /etc/vedadb
+
+# Protect kernel interfaces
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+# Restrict namespace access
+RestrictNamespaces=true
+
+# Disable realtime scheduling
+RestrictRealtime=true
+
+# Protect clock
+ProtectClock=true
+
+# Protect hostname
+ProtectHostname=true
+
+# Private /tmp
+PrivateTmp=true
+
+# --- Resource Limits ---
+# Maximum open files (sockets, database files)
+LimitNOFILE=65536
+
+# Maximum processes
+LimitNPROC=4096
+
+# Memory lock for database caching
+LimitMEMLOCK=infinity
+
+# --- Notification ---
+# Allow the service to send systemd notifications
+NotifyAccess=all
+
+# Watchdog: service must ping systemd every 30 seconds
+WatchdogSec=30
+
+[Install]
+# Start on boot in multi-user mode
+WantedBy=multi-user.target
