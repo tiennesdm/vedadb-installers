@@ -1,67 +1,88 @@
-# VedaDB Native Installers
+# VedaDB Installers
 
-Production-grade native installers for VedaDB Server on Windows, macOS, and Ubuntu/Debian.
+> **Installation Scripts & Packages for VedaDB**
+> One-command install on any platform.
 
-## Supported Platforms
+## Overview
 
-| OS | Format | Tool | One-Line Install |
-|----|--------|------|-----------------|
-| **Windows** | .msi | WiX Toolset v4 | Download .msi, double-click |
-| **macOS** | .pkg + .dmg | pkgbuild + productbuild | `brew install vedadb` |
-| **Ubuntu/Debian** | .deb | dpkg-deb + fpm | `curl -fsSL https://vedadb.io/install.sh \| bash` |
+This repository contains official installation scripts and packaging configuration for VedaDB Server and Workbench.
 
 ## Quick Install
 
-### Windows (.msi Wizard)
-```powershell
-# 6-step wizard: Welcome -> License -> Directory -> Config -> Install -> Finish
-# Auto: Windows Service, firewall rule, PATH, Start Menu
-vedadb-server.msi
+### Linux (Ubuntu/Debian)
+```bash
+curl -fsSL https://get.vedadb.io | bash
 ```
 
-### macOS (PKG or Homebrew)
+### macOS
 ```bash
-# PKG installer
-sudo installer -pkg vedadb-macos.pkg -target /
-
-# Or Homebrew
-brew tap tiennesdm/vedadb
+brew tap vedadb/tap
 brew install vedadb
-brew services start vedadb
 ```
 
-### Ubuntu/Debian
+### Windows
+```powershell
+# PowerShell (Admin)
+iwr -useb https://get.vedadb.io/win | iex
+```
+
+### Docker
 ```bash
-# One-liner
-curl -fsSL https://vedadb.io/install.sh | bash
-
-# Or APT
-sudo add-apt-repository ppa:vedadb/stable
-sudo apt update
-sudo apt install vedadb-server
+docker run -p 8080:8080 vedadb/vedadb:latest
 ```
 
-## Build
+### Kubernetes
+```bash
+kubectl apply -f https://raw.githubusercontent.com/tiennesdm/vedadb-infra/main/k8s/vedadb-deployment.yaml
+```
+
+## Manual Installation
 
 ```bash
-./build-all.sh --version 1.0.0 --output ./dist
+git clone https://github.com/tiennesdm/vedadb-installers.git
+cd vedadb-installers
+
+# Ubuntu/Debian
+sudo ./install-ubuntu.sh
+
+# CentOS/RHEL
+sudo ./install-centos.sh
+
+# macOS
+./install-macos.sh
+
+# From source
+./install-from-source.sh
 ```
 
-## Files
+## Post-Installation
 
-- `windows/vedadb-server.wxs` — WiX v4 MSI source (6-page wizard)
-- `windows/installer.nsi` — NSIS alternative installer
-- `macos/build-pkg.sh` — macOS PKG build script
-- `macos/postinstall` — Post-install (data dir, LaunchAgent, config)
-- `macos/io.vedadb.server.plist` — LaunchAgent for auto-start
-- `macos/uninstall.sh` — macOS uninstall script
-- `macos/vedadb.rb` — Homebrew formula
-- `ubuntu/build-deb.sh` — Debian package build
-- `ubuntu/DEBIAN/` — control, postinst, prerm, postrm
-- `ubuntu/vedadb.service` — systemd unit (hardened)
-- `ubuntu/setup-apt-repo.sh` — `curl | bash` one-liner
-- `config-generator.go` — OS-aware YAML config generator
-- `build-all.sh` — Master build orchestrator
+```bash
+# Start service
+sudo systemctl start vedadb
+
+# Verify
+http://localhost:8080/health
+
+# Configure
+sudo nano /etc/vedadb/vedadb.conf
+sudo systemctl restart vedadb
+```
+
+## Uninstall
+
+```bash
+sudo ./uninstall.sh
+```
+
+## Related Repos
+
+| Repo | Purpose |
+|------|---------|
+| [vedadb-infra](https://github.com/tiennesdm/vedadb-infra) | Docker, K8s, CI/CD configs |
+| [vedadb-server-code](https://github.com/tiennesdm/vedadb-server-code) | Core database engine |
+| [vedadb-workbench-desktop](https://github.com/tiennesdm/vedadb-workbench-desktop) | Desktop app |
 
 ## License
+
 Apache 2.0
