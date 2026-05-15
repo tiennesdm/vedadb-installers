@@ -1,0 +1,134 @@
+#!/bin/bash
+# =============================================================================
+# VedaDB Server - Debian/Ubuntu Post-Removal Script
+# =============================================================================
+# Description:
+#   Runs after the package files are removed. Handles cleanup of data
+#   directories, service user/group removal (on purge only).
+#
+# Called by:
+#   dpkg during package removal with 'purge', 'remove', 'upgrade',
+#   'abort-upgrade', 'abort-remove', or 'abort-deconfigure'.
+#
+# Arguments:
+#   $1 = 'purge' | 'remove' | 'upgrade' | 'abort-*'
+#
+# Important:
+#   - On 'remove': Keep data and config (user might reinstall)
+#   - On 'purge': Remove everything including data and user
+# =============================================================================
+
+set -e
+
+# --- Configuration ---
+VEDADB_USER="vedadb"
+VEDADB_GROUP="vedadb"
+VEDADB_DATA="/var/lib/vedadb"
+VEDADB_LOGS="/var/log/vedadb"
+VEDADB_CONFIG="/etc/vedadb"
+
+# --- Colors ---
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+log_info()  { echo -e "${BLUE}[INFO]${NC} $1"; }
+log_ok()    { echo -e "${GREEN}[OK]${NC}   $1"; }
+log_warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
+
+# --- Main logic ---
+case "$1" in
+    purge)
+        echo ""
+        log_info "Purging VedaDB Server (removing all data and configuration)..."
+        echo ""
+
+        # Remove data directory
+        if [ -d "$VEDADB_DATA" ]; then
+            log_info "Removing data directory: $VEDADB_DATA"
+            rm -rf "$VEDADB_DATA"
+            log_ok "Data directory removed."
+        fi
+
+        # Remove log directory
+        if [ -d "$VEDADB_LOGS" ]; then
+            log_info "Removing log directory: $VEDADB_LOGS"
+            rm -rf "$VEDADB_LOGS"
+            log_ok "Log directory removed."
+        fi
+
+        # Remove config directory
+        if [ -d "$VEDADB_CONFIG" ]; then
+            log_info "Removing config directory: $VEDADB_CONFIG"
+            rm -rf "$VEDADB_CONFIG"
+            log_ok "Config directory removed."
+        fi
+
+        # Remove service user (only on purge)
+        if id "$VEDADB_USER" > /dev/null 2>&1; then
+            log_info "Removing user '$VEDADB_USER'..."
+            userdel "$VEDADB_USER" 2>/dev/null || {
+                log_warn "Could not remove user (may have running processes)."
+            }
+            log_ok "User removed."
+        fi
+
+        # Remove service group (only on purge)
+        if getent group "$VEDADB_GROUP" > /dev/null 2>&1; then
+            log_info "Removing group '$VEDADB_GROUP'..."
+            groupdel "$VEDADB_GROUP" 2>/dev/null || {
+                log_warn "Could not remove group (may still have members)."
+            }
+            log_ok "Group removed."
+        fi
+
+        # Remove any leftover backup configs
+        rm -f /etc/vedadb/config.yaml.bak.*
+
+        # Reload systemd to pick up the removed service
+        systemctl daemon-reload 2>/dev/null || true
+
+        echo ""
+        log_ok "VedaDB Server has been completely purged."
+        echo ""
+        ;;
+
+    remove)
+        # On 'remove' (not purge), keep data and config
+        # This allows user to reinstall and retain their database
+        log_info "VedaDB Server removed. Data preserved at:"
+        log_info "  $VEDADB_DATA"
+        log_info "  $VEDADB_LOGS"
+        log_info "  $VEDADB_CONFIG"
+        log_info ""
+        log_info "To remove all data: sudo apt purge vedadb-server"
+        echo ""
+        ;;
+
+    upgrade)
+        # Nothing to do on upgrade
+        ;;
+
+    abort-upgrade)
+        log_warn "Upgrade aborted. Partial changes may remain."
+        ;;
+
+    abort-remove)
+        log_warn "Removal aborted. Package files may be partially removed."
+        ;;
+
+    abort-deconfigure)
+        log_warn "Deconfigure aborted."
+        ;;
+
+    *)
+        echo "postrm called with unknown argument: $1" >&2
+        exit 1
+        ;;
+esac
+
+# --- Debhelper integration ---
+#DEBHELPER#
+
+exit 0

@@ -1,0 +1,209 @@
+#!/bin/bash
+# =============================================================================
+# VedaDB Server - Debian/Ubuntu Post-Installation Script
+# =============================================================================
+# Description:
+#   Handles setup after package files are extracted. Creates the vedadb
+#   service user and group, sets up data directories, generates configuration,
+#   enables the systemd service, and starts the server.
+#
+# Called by:
+#   dpkg during package installation/upgrade with 'configure' argument.
+#
+# Arguments:
+#   $1 = 'configure' | 'abort-upgrade' | 'abort-remove' | 'abort-deconfigure'
+#   $2 = previous version (on upgrade)
+# =============================================================================
+
+set -e
+
+# --- Configuration ---
+VEDADB_USER="vedadb"
+VEDADB_GROUP="vedadb"
+VEDADB_DATA="/var/lib/vedadb"
+VEDADB_LOGS="/var/log/vedadb"
+VEDADB_CONFIG="/etc/vedadb"
+VEDADB_BIN="/opt/vedadb/bin"
+
+# --- Colors ---
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+log_info()  { echo -e "${BLUE}[INFO]${NC} $1"; }
+log_ok()    { echo -e "${GREEN}[OK]${NC}   $1"; }
+log_warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
+log_error() { echo -e "${RED}[ERROR]${NC} $1" >&2; }
+
+# --- Main configure action ---
+case "$1" in
+    configure)
+        echo ""
+        log_info "=========================================="
+        log_info "  Configuring VedaDB Server"
+        log_info "=========================================="
+        echo ""
+
+        # --- Step 1: Create system group ---
+        log_info "Step 1/7: Creating group '$VEDADB_GROUP'..."
+        if ! getent group "$VEDADB_GROUP" > /dev/null 2>&1; then
+            groupadd --system "$VEDADB_GROUP"
+            log_ok "Group '$VEDADB_GROUP' created."
+        else
+            log_warn "Group '$VEDADB_GROUP' already exists."
+        fi
+
+        # --- Step 2: Create system user ---
+        log_info "Step 2/7: Creating user '$VEDADB_USER'..."
+        if ! id "$VEDADB_USER" > /dev/null 2>&1; then
+            useradd --system \
+                    --gid "$VEDADB_GROUP" \
+                    --home-dir "$VEDADB_DATA" \
+                    --shell /usr/sbin/nologin \
+                    --comment "VedaDB database server" \
+                    "$VEDADB_USER"
+            log_ok "User '$VEDADB_USER' created."
+        else
+            log_warn "User '$VEDADB_USER' already exists."
+        fi
+
+        # --- Step 3: Create data directories ---
+        log_info "Step 3/7: Creating data directories..."
+        mkdir -p "$VEDADB_DATA/data"
+        mkdir -p "$VEDADB_LOGS"
+        mkdir -p "$VEDADB_CONFIG"
+
+        # Set ownership
+        chown -R "$VEDADB_USER:$VEDADB_GROUP" "$VEDADB_DATA"
+        chown -R "$VEDADB_USER:$VEDADB_GROUP" "$VEDADB_LOGS"
+        chown -R root:"$VEDADB_GROUP" "$VEDADB_CONFIG"
+        chmod 755 "$VEDADB_DATA"
+        chmod 750 "$VEDADB_DATA/data"
+        chmod 755 "$VEDADB_LOGS"
+        chmod 750 "$VEDADB_CONFIG"
+        log_ok "Data directories created."
+
+        # --- Step 4: Generate configuration ---
+        log_info "Step 4/7: Generating configuration..."
+        if [ ! -f "$VEDADB_CONFIG/config.yaml" ]; then
+            if [ -x "$VEDADB_BIN/vedadb-config-generator" ]; then
+                "$VEDADB_BIN/vedadb-config-generator" \
+                    --os linux \
+                    --data-dir "$VEDADB_DATA/data" \
+                    --log-dir "$VEDADB_LOGS" \
+                    --output "$VEDADB_CONFIG/config.yaml"
+            else
+                # Fallback: create basic config
+                log_warn "Config generator not found, creating basic config."
+                cat > "$VEDADB_CONFIG/config.yaml" << 'EOF'
+server:
+  port: 7480
+  host: 0.0.0.0
+  data_dir: /var/lib/vedadb/data
+  max_connections: 1000
+  query_timeout: 30s
+
+auth:
+  enabled: true
+  method: password
+  admin_user: admin
+
+logging:
+  level: info
+  file: /var/log/vedadb/vedadb-server.log
+  max_size: 100MB
+  max_files: 5
+  format: json
+
+engines:
+  document:
+    enabled: true
+  keyvalue:
+    enabled: true
+  graph:
+    enabled: true
+  vector:
+    enabled: true
+  timeseries:
+    enabled: true
+EOF
+            fi
+
+            # Secure config file permissions
+            chown root:"$VEDADB_GROUP" "$VEDADB_CONFIG/config.yaml"
+            chmod 640 "$VEDADB_CONFIG/config.yaml"
+            log_ok "Configuration generated at $VEDADB_CONFIG/config.yaml"
+        else
+            log_warn "Config already exists, preserving."
+        fi
+
+        # --- Step 5: Set capabilities ---
+        log_info "Step 5/7: Setting binary capabilities..."
+        if command -v setcap >/dev/null 2>&1; then
+            # Allow binding to privileged ports (<1024) if needed
+            setcap 'cap_net_bind_service=+ep' "$VEDADB_BIN/vedadb-server" 2>/dev/null || true
+            log_ok "Capabilities set (or skipped if not supported)."
+        else
+            log_warn "setcap not available, capabilities not set."
+        fi
+
+        # --- Step 6: Reload systemd and enable service ---
+        log_info "Step 6/7: Configuring systemd service..."
+        systemctl daemon-reload
+        systemctl enable vedadb.service
+        log_ok "Systemd service enabled."
+
+        # --- Step 7: Start service ---
+        log_info "Step 7/7: Starting VedaDB Server..."
+        if [ -z "${VEDADB_NO_AUTO_START:-}" ]; then
+            if systemctl start vedadb.service; then
+                log_ok "VedaDB Server started successfully."
+            else
+                log_warn "Service failed to start. Check logs: journalctl -u vedadb -n 50"
+            fi
+        else
+            log_warn "VEDADB_NO_AUTO_START is set, not starting service."
+        fi
+
+        # --- Summary ---
+        echo ""
+        echo "================================================"
+        echo -e "  ${GREEN}VedaDB Server installed successfully!${NC}"
+        echo "================================================"
+        echo ""
+        echo "  Data directory:  $VEDADB_DATA"
+        echo "  Config file:     $VEDADB_CONFIG/config.yaml"
+        echo "  Log directory:   $VEDADB_LOGS"
+        echo ""
+        echo "  Service:         systemctl {start|stop|status} vedadb"
+        echo "  CLI:             vedadb-cli --help"
+        echo "  Logs:            journalctl -u vedadb -f"
+        echo ""
+        echo "================================================"
+        echo ""
+        ;;
+
+    abort-upgrade)
+        log_warn "Upgrade aborted. No changes made."
+        ;;
+
+    abort-remove)
+        log_warn "Removal aborted. No changes made."
+        ;;
+
+    abort-deconfigure)
+        log_warn "Deconfigure aborted. No changes made."
+        ;;
+
+    *)
+        log_error "postinst called with unknown argument: $1"
+        exit 1
+        ;;
+esac
+
+# --- Debhelper integration ---
+#DEBHELPER#
+
+exit 0

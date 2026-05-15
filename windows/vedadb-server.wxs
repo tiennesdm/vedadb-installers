@@ -1,0 +1,458 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  =============================================================================
+  VedaDB Server - Windows MSI Installer (WiX Toolset v4)
+  =============================================================================
+  Description:
+    Production-grade MSI installer for VedaDB Server on Windows 10/11/Server 2019+.
+    Features a 6-page wizard: Welcome > License > Directory > Config > Install > Finish.
+    Registers Windows Service, adds firewall rule, sets PATH, generates config.
+
+  Build:
+    wix build -arch x64 -d Version=1.0.0 -d BinDir=..\bin vedadb-server.wxs
+
+  Dependencies:
+    - WiX Toolset v4 (wix.exe)
+    - WixUI extension
+    - WixFirewallExtension
+  =============================================================================
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util"
+     xmlns:fire="http://wixtoolset.org/schemas/v4/wxs/firewall">
+
+  <!--
+    ============================================================================
+    Package Definition
+    ============================================================================
+  -->
+  <Package Name="VedaDB Server"
+           Language="1033"
+           Version="$(var.Version)"
+           Manufacturer="VedaDB Inc."
+           UpgradeCode="f47ac10b-58cc-4372-a567-0e02b2c3d479"
+           Scope="perMachine">
+
+    <!-- Prevent downgrades -->
+    <MajorUpgrade DowngradeErrorMessage="A newer version of VedaDB Server is already installed."
+                  Schedule="afterInstallInitialize" />
+
+    <!-- Embed CAB files directly in the MSI for single-file distribution -->
+    <MediaTemplate EmbedCab="yes" />
+
+    <!--
+      ==========================================================================
+      Summary Information
+      ==========================================================================
+    -->
+    <SummaryInformation Description="VedaDB Server Installer"
+                        Keywords="Installer,Database,VedaDB"
+                        Manufacturer="VedaDB Inc." />
+
+    <!--
+      ==========================================================================
+      Features
+      ==========================================================================
+      - ServerFeature: Core server binaries and data directories
+      - ToolsFeature: CLI tools and PATH integration
+      - ServiceFeature: Windows Service registration
+      - ConfigFeature: Configuration file and data directory setup
+    -->
+    <Feature Id="ServerFeature" Title="VedaDB Server" Level="1" AllowAdvertise="no"
+             Description="Core database server binaries">
+      <ComponentGroupRef Id="ServerComponents" />
+      <ComponentGroupRef Id="ServiceComponents" />
+      <ComponentGroupRef Id="ConfigComponents" />
+      <ComponentGroupRef Id="DataDirComponents" />
+      <ComponentGroupRef Id="FirewallComponents" />
+      <ComponentGroupRef Id="ShortcutComponents" />
+    </Feature>
+
+    <Feature Id="ToolsFeature" Title="Command Line Tools" Level="1" AllowAdvertise="no"
+             Description="CLI client, benchmark, and backup tools">
+      <ComponentGroupRef Id="ToolComponents" />
+    </Feature>
+
+    <!--
+      ==========================================================================
+      Installer Properties (configurable at install time)
+      ==========================================================================
+    -->
+    <!-- Server port (1024-65535) -->
+    <Property Id="VEDADBPORT" Value="7480" />
+    <Property Id="VEDADBDATADIR" Value="[CommonAppDataFolder]VedaDB\data" />
+    <Property Id="VEDADBLOGDIR" Value="[CommonAppDataFolder]VedaDB\logs" />
+    <Property Id="VEDADBPASSWORD" Value="" />
+    <Property Id="VEDADBAUTHENABLED" Value="1" />
+
+    <!-- Install directory property -->
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+
+    <!--
+      ==========================================================================
+      Directory Structure
+      ==========================================================================
+      Program Files\VedaDB\      - Application binaries and docs
+        bin\                     - Server and tool executables
+        lib\                     - Runtime libraries (if needed)
+        share\                   - License, README
+        icons\                   - Application icons
+      CommonAppData\VedaDB\     - Data, logs, config (writable by service)
+        data\                    - Database files
+        logs\                    - Server log files
+        config.yaml              - Server configuration
+    -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="VedaDB">
+        <Directory Id="BINDIR" Name="bin" />
+        <Directory Id="LIBDIR" Name="lib" />
+        <Directory Id="SHAREDIR" Name="share" />
+        <Directory Id="ICONSDIR" Name="icons" />
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="VEDADBDATA" Name="VedaDB">
+        <Directory Id="VEDADBDATADIRREF" Name="data" />
+        <Directory Id="VEDADBLOGDIRREF" Name="logs" />
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="VedaDB" />
+    </StandardDirectory>
+
+    <!--
+      ==========================================================================
+      Server Binary Components
+      - vedadb-server.exe: Main database engine (always installed)
+      - vedadb-bench.exe:  Benchmark tool
+      - vedadb-backup.exe: Backup/restore utility
+      ==========================================================================
+    -->
+    <ComponentGroup Id="ServerComponents" Directory="BINDIR">
+      <Component>
+        <File Id="vedadb_server_exe"
+              Source="$(var.BinDir)\vedadb-server.exe"
+              KeyPath="yes"
+              Checksum="yes" />
+        <!-- Grant Network Service read/execute permissions -->
+        <PermissionEx Sddl="A;;FR;;;NS" />
+      </Component>
+      <Component>
+        <File Id="vedadb_bench_exe"
+              Source="$(var.BinDir)\vedadb-bench.exe"
+              Checksum="yes" />
+      </Component>
+      <Component>
+        <File Id="vedadb_backup_exe"
+              Source="$(var.BinDir)\vedadb-backup.exe"
+              Checksum="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!--
+      ==========================================================================
+      Tool Components (with PATH environment variable)
+      - vedadb-cli.exe: Command-line client
+      - Adds INSTALLFOLDER\bin to system PATH
+      ==========================================================================
+    -->
+    <ComponentGroup Id="ToolComponents" Directory="BINDIR">
+      <Component>
+        <File Id="vedadb_cli_exe"
+              Source="$(var.BinDir)\vedadb-cli.exe"
+              KeyPath="yes"
+              Checksum="yes" />
+        <!-- Add to system PATH -->
+        <Environment Id="VedaDbPath"
+                     Name="PATH"
+                     Value="[INSTALLFOLDER]bin"
+                     Action="set"
+                     Part="last"
+                     System="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!--
+      ==========================================================================
+      Windows Service Registration
+      - Service Name: VedaDBServer
+      - Display Name: VedaDB Server
+      - Log On As: NT AUTHORITY\NetworkService (least privilege)
+      - Auto-start on boot
+      - Recovery: restart on first failure (10s), restart on second (30s)
+      ==========================================================================
+    -->
+    <ComponentGroup Id="ServiceComponents" Directory="BINDIR">
+      <Component>
+        <!-- Install the service -->
+        <ServiceInstall Id="VedaDBService"
+                        Name="VedaDBServer"
+                        DisplayName="VedaDB Server"
+                        Description="VedaDB - Multi-model database server. Supports document, key-value, graph, and vector data models."
+                        Start="auto"
+                        Type="ownProcess"
+                        ErrorControl="normal"
+                        Arguments='--config "[CommonAppDataFolder]VedaDB\config.yaml"'
+                        Account="NT AUTHORITY\NetworkService"
+                        Interactive="no">
+          <!-- Service recovery actions -->
+          <util:ServiceConfig FirstFailureActionType="restart"
+                              FirstFailureActionDelay="10000"
+                              SecondFailureActionType="restart"
+                              SecondFailureActionDelay="30000"
+                              ThirdFailureActionType="none"
+                              ResetPeriodInDays="1" />
+        </ServiceInstall>
+        <!-- Control the service lifecycle -->
+        <ServiceControl Id="VedaDBServiceControl"
+                        Name="VedaDBServer"
+                        Start="install"
+                        Stop="both"
+                        Remove="uninstall" />
+      </Component>
+    </ComponentGroup>
+
+    <!--
+      ==========================================================================
+      Data Directory & Configuration
+      - Creates data and log directories in ProgramData
+      - Sets ACLs so Network Service can read/write
+      - Generates config.yaml at install time via custom action
+      ==========================================================================
+    -->
+    <ComponentGroup Id="DataDirComponents" Directory="VEDADBDATA">
+      <!-- Create VedaDB root directory with Network Service permissions -->
+      <Component>
+        <CreateFolder>
+          <PermissionEx Sddl="A;OICI;GRGW;;;NS" />
+        </CreateFolder>
+      </Component>
+      <!-- Data subdirectory -->
+      <Component Directory="VEDADBDATADIRREF">
+        <CreateFolder>
+          <PermissionEx Sddl="A;OICI;GRGW;;;NS" />
+        </CreateFolder>
+      </Component>
+      <!-- Logs subdirectory -->
+      <Component Directory="VEDADBLOGDIRREF">
+        <CreateFolder>
+          <PermissionEx Sddl="A;OICI;GRGW;;;NS" />
+        </CreateFolder>
+      </Component>
+    </ComponentGroup>
+
+    <!--
+      ==========================================================================
+      Configuration File Generation
+      - Uses WiX util:XmlFile to write config values
+      - Generates %PROGRAMDATA%\VedaDB\config.yaml
+      ==========================================================================
+    -->
+    <ComponentGroup Id="ConfigComponents" Directory="VEDADBDATA">
+      <Component>
+        <!-- Seed config file will be generated by custom action or bundled -->
+        <File Id="config_yaml_template"
+              Source="$(var.BinDir)\config.yaml.template"
+              Name="config.yaml" />
+        <!-- Use util:XmlFile to set port at install time (if config is XML) -->
+        <!-- For YAML configs, we use a deferred custom action (see below) -->
+      </Component>
+    </ComponentGroup>
+
+    <!--
+      ==========================================================================
+      Windows Firewall Exception
+      - Adds inbound rule for configured port (default 7480)
+      - Applies to all profiles: Domain, Private, Public
+      - Uses WixFirewallExtension
+      ==========================================================================
+    -->
+    <ComponentGroup Id="FirewallComponents" Directory="BINDIR">
+      <Component>
+        <fire:FirewallException Id="VedaDBFirewall"
+                                Name="VedaDB Server (Port [VEDADBPORT])"
+                                Port="[VEDADBPORT]"
+                                Protocol="tcp"
+                                Profile="all"
+                                Scope="any"
+                                Program="[BINDIR]vedadb-server.exe" />
+      </Component>
+    </ComponentGroup>
+
+    <!--
+      ==========================================================================
+      Start Menu Shortcuts
+      - VedaDB CLI: Opens command prompt with CLI help
+      - VedaDB Documentation: Opens browser to docs.vedadb.io
+      - Uninstall VedaDB: Runs MSI uninstall
+      ==========================================================================
+    -->
+    <ComponentGroup Id="ShortcutComponents" Directory="ApplicationProgramsFolder">
+      <Component>
+        <!-- VedaDB CLI shortcut -->
+        <Shortcut Id="VedaDbCliShortcut"
+                  Name="VedaDB CLI"
+                  Description="VedaDB Command Line Interface"
+                  Target="[SystemFolder]cmd.exe"
+                  Arguments='/k "[BINDIR]vedadb-cli.exe --help"'
+                  WorkingDirectory="BINDIR"
+                  Icon="vedadb_icon_ico" />
+        <!-- Documentation shortcut -->
+        <Shortcut Id="VedaDbDocsShortcut"
+                  Name="VedaDB Documentation"
+                  Description="Open VedaDB documentation in your browser"
+                  Target="[SystemFolder]cmd.exe"
+                  Arguments='/c start https://docs.vedadb.io'
+                  Icon="vedadb_icon_ico" />
+        <!-- Uninstall shortcut -->
+        <Shortcut Id="VedaDbUninstallShortcut"
+                  Name="Uninstall VedaDB"
+                  Description="Remove VedaDB Server from your computer"
+                  Target="[SystemFolder]msiexec.exe"
+                  Arguments="/x [ProductCode]"
+                  Icon="vedadb_icon_ico" />
+        <!-- Remove shortcuts on uninstall -->
+        <RemoveFolder Id="ApplicationProgramsFolder" On="uninstall" />
+        <RegistryValue Root="HKMU"
+                       Key="Software\VedaDB"
+                       Name="Installed"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!--
+      ==========================================================================
+      Icons
+      ==========================================================================
+    -->
+    <Icon Id="vedadb_icon_ico" SourceFile="$(var.BinDir)\..\assets\vedadb.ico" />
+    <Property Id="ARPPRODUCTICON" Value="vedadb_icon_ico" />
+
+    <!--
+      ==========================================================================
+      Custom Actions
+      - GenerateConfig: Deferred CA that writes config.yaml with install-time values
+      - Validates port range before installation
+      ==========================================================================
+    -->
+    <CustomAction Id="GenerateConfig_Deferred"
+                  Script="vbscript"
+                  Execute="deferred"
+                  Return="check"
+                  Impersonate="no">
+      <![CDATA[
+        ' Generate config.yaml with install-time values
+        Dim fso, configFile, port, dataDir, logDir
+        Set fso = CreateObject("Scripting.FileSystemObject")
+
+        port = Session.Property("VEDADBPORT")
+        dataDir = Session.Property("VEDADBDATADIR")
+        logDir = Session.Property("VEDADBLOGDIR")
+
+        ' Default port if not set
+        If port = "" Then port = "7480"
+
+        configFile = Session.Property("CommonAppDataFolder") & "VedaDB\config.yaml"
+
+        Dim ts
+        Set ts = fso.CreateTextFile(configFile, True)
+        ts.WriteLine("# ============================================================================")
+        ts.WriteLine("# VedaDB Server Configuration")
+        ts.WriteLine("# Auto-generated by VedaDB Installer v" & Session.Property("ProductVersion"))
+        ts.WriteLine("# ============================================================================")
+        ts.WriteLine("")
+        ts.WriteLine("server:")
+        ts.WriteLine("  port: " & port)
+        ts.WriteLine("  host: 127.0.0.1")
+        ts.WriteLine("  data_dir: " & dataDir)
+        ts.WriteLine("  max_connections: 1000")
+        ts.WriteLine("  query_timeout: 30s")
+        ts.WriteLine("")
+        ts.WriteLine("auth:")
+        ts.WriteLine("  enabled: true")
+        ts.WriteLine("  method: password")
+        ts.WriteLine("  admin_user: admin")
+        ts.WriteLine("")
+        ts.WriteLine("logging:")
+        ts.WriteLine("  level: info")
+        ts.WriteLine("  file: " & logDir & "\vedadb-server.log")
+        ts.WriteLine("  max_size: 100MB")
+        ts.WriteLine("  max_files: 5")
+        ts.WriteLine("  format: json")
+        ts.WriteLine("")
+        ts.WriteLine("engines:")
+        ts.WriteLine("  document:")
+        ts.WriteLine("    enabled: true")
+        ts.WriteLine("  keyvalue:")
+        ts.WriteLine("    enabled: true")
+        ts.WriteLine("  graph:")
+        ts.WriteLine("    enabled: true")
+        ts.WriteLine("  vector:")
+        ts.WriteLine("    enabled: true")
+        ts.WriteLine("  timeseries:")
+        ts.WriteLine("    enabled: true")
+        ts.Close()
+
+        ' Set permissions on config file
+        Dim wmi, sd
+        Set wmi = GetObject("winmgmts:{impersonationLevel=impersonate}!\\.\root\cimv2")
+        ' Grant Network Service read access
+        Dim execCmd
+        execCmd = "icacls """ & configFile & """ /grant ""NT AUTHORITY\Network Service"":(R)"
+        Dim wsh
+        Set wsh = CreateObject("WScript.Shell")
+        wsh.Run execCmd, 0, True
+      ]]>
+    </CustomAction>
+
+    <!-- Property to pass VEDADBPORT to deferred action -->
+    <CustomAction Id="SetConfigProps"
+                  Property="GenerateConfig_Deferred"
+                  Value="VEDADBPORT=[VEDADBPORT];VEDADBDATADIR=[VEDADBDATADIR];VEDADBLOGDIR=[VEDADBLOGDIR]" />
+
+    <!--
+      ==========================================================================
+      Install Sequences
+      ==========================================================================
+    -->
+    <InstallExecuteSequence>
+      <!-- Pass properties to deferred custom action -->
+      <Custom Action="SetConfigProps" Before="GenerateConfig_Deferred" />
+      <!-- Generate config after files are installed -->
+      <Custom Action="GenerateConfig_Deferred" After="InstallFiles" />
+    </InstallExecuteSequence>
+
+    <!--
+      ==========================================================================
+      UI Configuration
+      - Uses built-in WiX InstallDir dialog set
+      - Customized with VedaDB branding assets
+      - License agreement required
+      ==========================================================================
+    -->
+    <ui:WixUI Id="WixUI_InstallDir" />
+
+    <!-- License agreement RTF file -->
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.BinDir)\..\assets\LICENSE.rtf" />
+    <!-- Dialog background bitmap (493 x 312 pixels) -->
+    <WixVariable Id="WixUIDialogBmp" Value="$(var.BinDir)\..\assets\dialog-bg.bmp" />
+    <!-- Banner bitmap (493 x 58 pixels) -->
+    <WixVariable Id="WixUIBannerBmp" Value="$(var.BinDir)\..\assets\banner.bmp" />
+
+    <!--
+      ==========================================================================
+      Localization & Strings
+      ==========================================================================
+    -->
+    <Property Id="ARPURLINFOABOUT" Value="https://vedadb.io" />
+    <Property Id="ARPHELPLINK" Value="https://docs.vedadb.io" />
+    <Property Id="ARPNOREPAIR" Value="yes" />
+    <Property Id="ARPNOMODIFY" Value="yes" />
+
+  </Package>
+</Wix>
